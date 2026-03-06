@@ -89,7 +89,7 @@
 </script>
   <script>
 (function () {
-  function premultiplyCanvasAlpha(canvas) {
+  function fixFringe(canvas) {
     try {
       const ctx = canvas.getContext("2d", { willReadFrequently: true });
       if (!ctx) return;
@@ -100,16 +100,60 @@
       const img = ctx.getImageData(0, 0, w, h);
       const d = img.data;
 
+      // Helper: índice de pixel
+      const idx = (x, y) => (y * w + x) * 4;
+
+      // 1) Premultiply: elimina halos por RGB en transparente puro
       for (let i = 0; i < d.length; i += 4) {
         const a = d[i + 3] / 255;
+        if (a === 0) { d[i] = 0; d[i+1] = 0; d[i+2] = 0; continue; }
         if (a === 1) continue;
-        if (a === 0) {
-          d[i] = 0; d[i + 1] = 0; d[i + 2] = 0;
-          continue;
+        d[i]   = Math.round(d[i]   * a);
+        d[i+1] = Math.round(d[i+1] * a);
+        d[i+2] = Math.round(d[i+2] * a);
+      }
+
+      // 2) De-fringe: para bordes semitransparentes "blancos", copiar color del vecino más opaco
+      //    (Esto quita el reborde blanco feo sin perder transparencia)
+      for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+          const p = idx(x, y);
+          const a = d[p + 3];
+
+          // Solo píxeles semitransparentes
+          if (a <= 0 || a >= 255) continue;
+
+          const r = d[p], g = d[p + 1], b = d[p + 2];
+          const avg = (r + g + b) / 3;
+
+          // Si el píxel del borde está "demasiado blanco", suele ser matte
+          // Ajusta el umbral si quieres (220 suele ir fino)
+          if (avg < 220) continue;
+
+          // Buscar vecino con mayor alfa (más "interior")
+          let bestA = -1, bestR = r, bestG = g, bestB = b;
+
+          for (let ny = y - 1; ny <= y + 1; ny++) {
+            for (let nx = x - 1; nx <= x + 1; nx++) {
+              if (nx === x && ny === y) continue;
+              const q = idx(nx, ny);
+              const na = d[q + 3];
+              if (na > bestA) {
+                bestA = na;
+                bestR = d[q];
+                bestG = d[q + 1];
+                bestB = d[q + 2];
+              }
+            }
+          }
+
+          // Solo si encontramos un vecino bastante opaco (evita contaminar zonas realmente transparentes)
+          if (bestA >= 200) {
+            d[p]     = bestR;
+            d[p + 1] = bestG;
+            d[p + 2] = bestB;
+          }
         }
-        d[i]     = Math.round(d[i]     * a);
-        d[i + 1] = Math.round(d[i + 1] * a);
-        d[i + 2] = Math.round(d[i + 2] * a);
       }
 
       ctx.putImageData(img, 0, 0);
@@ -119,14 +163,14 @@
   // Parchear exportación PNG (toDataURL y toBlob)
   const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
   HTMLCanvasElement.prototype.toDataURL = function () {
-    premultiplyCanvasAlpha(this);
+    fixFringe(this);
     return origToDataURL.apply(this, arguments);
   };
 
   const origToBlob = HTMLCanvasElement.prototype.toBlob;
   if (origToBlob) {
     HTMLCanvasElement.prototype.toBlob = function () {
-      premultiplyCanvasAlpha(this);
+      fixFringe(this);
       return origToBlob.apply(this, arguments);
     };
   }
