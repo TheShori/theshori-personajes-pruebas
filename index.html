@@ -87,6 +87,51 @@
   }, 100);
 })();
 </script>
+  <script>
+(function () {
+  function premultiplyCanvasAlpha(canvas) {
+    try {
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return;
+
+      const w = canvas.width, h = canvas.height;
+      if (!w || !h) return;
+
+      const img = ctx.getImageData(0, 0, w, h);
+      const d = img.data;
+
+      for (let i = 0; i < d.length; i += 4) {
+        const a = d[i + 3] / 255;
+        if (a === 1) continue;
+        if (a === 0) {
+          d[i] = 0; d[i + 1] = 0; d[i + 2] = 0;
+          continue;
+        }
+        d[i]     = Math.round(d[i]     * a);
+        d[i + 1] = Math.round(d[i + 1] * a);
+        d[i + 2] = Math.round(d[i + 2] * a);
+      }
+
+      ctx.putImageData(img, 0, 0);
+    } catch (e) {}
+  }
+
+  // Parchear exportación PNG (toDataURL y toBlob)
+  const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
+  HTMLCanvasElement.prototype.toDataURL = function () {
+    premultiplyCanvasAlpha(this);
+    return origToDataURL.apply(this, arguments);
+  };
+
+  const origToBlob = HTMLCanvasElement.prototype.toBlob;
+  if (origToBlob) {
+    HTMLCanvasElement.prototype.toBlob = function () {
+      premultiplyCanvasAlpha(this);
+      return origToBlob.apply(this, arguments);
+    };
+  }
+})();
+</script>
   <body>
     <div id="app"></div>
     
