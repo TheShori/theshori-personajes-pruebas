@@ -11,6 +11,82 @@
     <script type="module" crossorigin src="./assets/index.8198a119.js"></script>
     <link rel="stylesheet" href="./assets/index.87520ace.css">
   </head>
+  <script>
+(function () {
+  const KEY = "useOld7Frame";
+
+  function getFlag() {
+    return localStorage.getItem(KEY) === "1";
+  }
+  function setFlag(v) {
+    localStorage.setItem(KEY, v ? "1" : "0");
+  }
+
+  // 1) Hook: si se pide champion-frame-7.png y el toggle está activo -> usar old_champion-frame-7.png
+  try {
+    const desc = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src");
+    if (desc && typeof desc.set === "function" && typeof desc.get === "function") {
+      Object.defineProperty(HTMLImageElement.prototype, "src", {
+        get: desc.get,
+        set: function (value) {
+          try {
+            if (getFlag() && typeof value === "string" && value.includes("champion-frame-7.png") && !value.includes("old_champion-frame-7.png")) {
+              value = value.replace("champion-frame-7.png", "old_champion-frame-7.png");
+            }
+          } catch (e) {}
+          return desc.set.call(this, value);
+        },
+        configurable: true,
+        enumerable: true
+      });
+    }
+  } catch (e) {}
+
+  // 2) UI: insertar checkbox justo debajo del label que contiene "ESTA DUPLICADO?"
+  function injectCheckbox() {
+    const labels = Array.from(document.querySelectorAll("label"));
+    const target = labels.find(l => (l.textContent || "").trim().toUpperCase().includes("ESTA DUPLICADO"));
+    if (!target) return false;
+
+    // Evitar duplicados si recarga/SPA
+    if (document.getElementById("toggle-old-7frame")) return true;
+
+    const wrap = document.createElement("label");
+    wrap.style.display = "flex";
+    wrap.style.alignItems = "center";
+    wrap.style.gap = "8px";
+    wrap.style.marginTop = "8px";
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.id = "toggle-old-7frame";
+    cb.checked = getFlag();
+
+    const span = document.createElement("span");
+    span.textContent = "Usar marco 7★ antiguo";
+
+    cb.addEventListener("change", () => {
+      setFlag(cb.checked);
+      // refresco “bruto” para que se re-carguen imágenes con el nuevo comportamiento
+      location.reload();
+    });
+
+    wrap.appendChild(cb);
+    wrap.appendChild(span);
+
+    // Insertar justo debajo del bloque del "ESTA DUPLICADO?"
+    target.insertAdjacentElement("afterend", wrap);
+    return true;
+  }
+
+  // Esperar a que la app pinte el formulario
+  let tries = 0;
+  const timer = setInterval(() => {
+    tries++;
+    if (injectCheckbox() || tries > 80) clearInterval(timer);
+  }, 100);
+})();
+</script>
   <body>
     <div id="app"></div>
     
